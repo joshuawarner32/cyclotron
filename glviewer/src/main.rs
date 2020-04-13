@@ -21,6 +21,8 @@ struct Args {
     trace: String,
     #[structopt(long)]
     show_framerate: bool,
+    #[structopt(default_value="60")]
+    target_framerate: f64,
     // grep: Vec<String>,
     // hide_wakeups: Vec<String>,
 }
@@ -50,20 +52,19 @@ fn main() {
     let mut view = View::new(&layout);
     let render = RenderState::new(&layout, &display);
 
+    let target_frame_delta = Duration::from_nanos((1e9 / args.target_framerate) as u64);
+
     let mut click_down_time = None;
     let mut last_name = None;
     let mut modifiers = glutin::event::ModifiersState::empty();
     let mut keys = NavKeys::default();
     let mut span_stack = Vec::new();
 
-    let mut last_tick = Instant::now();
-
     let mut last_frame = Instant::now();
     let mut frame_rates = Vec::new();
 
     event_loop.run(move |event, _, control_flow| {
-        let next_frame_time = Instant::now() + Duration::from_nanos(16_666_667/2);
-        *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
+        let now = Instant::now();
 
         match event {
             glutin::event::Event::WindowEvent { event, .. } => match event {
@@ -145,11 +146,14 @@ fn main() {
                 return;
             }
         }
+        
+        let next_frame_time = now + target_frame_delta;
+        let elapsed = now - last_frame;
+        last_frame = now;
+        *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
 
         if modifiers == glutin::event::ModifiersState::empty() {
-            let now = Instant::now();
-            let elapsed = (now - last_tick).as_secs_f64();
-            last_tick = now;
+            let elapsed = elapsed.as_secs_f64();
             let factor = 400.0;
             let key_x_speed = match (keys.left, keys.right) {
                 (true, false) => -factor,
@@ -166,10 +170,7 @@ fn main() {
 
 
         if args.show_framerate {
-            let now = Instant::now();
-            let elapsed = (now - last_frame).as_nanos() as u64;
-
-            frame_rates.push(elapsed);
+            frame_rates.push(elapsed.as_nanos() as u64);
 
             if frame_rates.len() == 60 {
                 print!("\r\x1b[0Kaverage {:.3} worst {:.3}",
@@ -178,8 +179,6 @@ fn main() {
                 std::io::stdout().flush().unwrap();
                 frame_rates.clear();
             }
-
-            last_frame = now;
 
         } else if let Some(selected) = view.selected_name() {
             if last_name != Some(selected) {
