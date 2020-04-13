@@ -13,7 +13,6 @@ use glium::{
     uniform,
     index::{
         PrimitiveType,
-        IndexBuffer
     },
     vertex::VertexBuffer,
     draw_parameters::DepthTest,
@@ -28,10 +27,10 @@ implement_vertex!(SimpleBoxVertex, position);
 
 #[derive(Copy, Clone)]
 struct BoxListVertex {
-    position: [f32; 2],
+    range: [f32; 2],
     group_ident: u32,
 }
-implement_vertex!(BoxListVertex, position, group_ident);
+implement_vertex!(BoxListVertex, range, group_ident);
 
 struct SimpleBoxData {
     vertex: VertexBuffer<SimpleBoxVertex>,
@@ -91,7 +90,7 @@ impl SimpleBoxData {
 
 struct BoxListData {
     vertex: VertexBuffer<BoxListVertex>,
-    index: IndexBuffer<u32>,
+    // No need for index buffer since we generate quads in the geom shader
 }
 
 impl BoxListData {
@@ -104,18 +103,16 @@ impl BoxListData {
             let s = verts.len() as u32;
             tris.extend(&[s, s+1, s+2, s+1, s+2, s+3]);
 
-            verts.push(BoxListVertex { position: [(span.begin as f32) / 1e9, 0.0], group_ident });
-            verts.push(BoxListVertex { position: [(span.end as f32) / 1e9, 0.0], group_ident });
-            verts.push(BoxListVertex { position: [(span.begin as f32) / 1e9, 1.0], group_ident });
-            verts.push(BoxListVertex { position: [(span.end as f32) / 1e9, 1.0], group_ident });
+            verts.push(BoxListVertex {
+                range: [(span.begin as f32) / 1e9, (span.end as f32) / 1e9],
+                group_ident
+            });
         }
 
         let vertex = VertexBuffer::new(display, &verts).unwrap();
-        let index = IndexBuffer::new(display, PrimitiveType::TrianglesList, &tris).unwrap();
 
         BoxListData {
             vertex,
-            index,
         }
     }
 
@@ -145,8 +142,8 @@ impl BoxListData {
         let group_color = name_highlight.map(|n| n.1).unwrap_or(color);
 
         target.draw(
-            &self.vertex,
-            &self.index.slice(6*range.begin .. 6*range.end).unwrap(),
+            self.vertex.slice(range.begin .. range.end).unwrap(),
+            &glium::index::NoIndices(PrimitiveType::Points),
             &shaders.box_list_program,
             &uniform! {
                 scale: [
@@ -199,9 +196,11 @@ impl Shaders {
 
         let box_list_program = {
             let vertex = r#"
-                #version 150
-                in vec2 position;
+                #version 330 core
+                in vec2 range;
                 in uint group_ident;
+
+                out vec4 quad_color;
 
                 uniform vec4 group_color;
                 uniform vec4 item_color;
@@ -209,31 +208,65 @@ impl Shaders {
                 uniform vec2 offset;
                 uniform uint highlight_group;
                 
-                out vec4 vert_color;
-                
                 void main() {
-                    vec2 pos0 = (position + offset)*scale;
-                    vec2 pos0_offset = pos0 - 0.5;
-                    gl_Position = vec4(2*pos0_offset.x, -2*pos0_offset.y, 0.0, 1.0);
+                    vec2 tform_xrange = ((range + offset.x)*scale.x - 0.5) * 2.0;
+                    vec2 tform_yrange = ((vec2(0.0, 1.0) + offset.y)*scale.y - 0.5) * -2.0;
 
                     if(highlight_group == group_ident) {
-                        vert_color = group_color;
+                        quad_color = group_color;
                     } else {
-                        vert_color = item_color;
+                        quad_color = item_color;
                     }
+                    gl_Position = vec4(
+                        tform_xrange.x, tform_xrange.y,
+                        tform_yrange.x, tform_yrange.y);
                 }
             "#;
 
+            let geometry = r#"
+                #version 330 core
+                layout (points) in;
+                layout (triangle_strip, max_vertices = 4) out;
+
+                in vec4 quad_color[];
+
+                out vec4 vert_color;
+
+                void main() {
+                    vec4 pos = gl_in[0].gl_Position;
+                    vec2 xrange = vec2(pos.x, pos.y);
+                    vec2 yrange = vec2(pos.z, pos.w);
+
+                    vert_color = quad_color[0];
+
+                    gl_Position = vec4(xrange.x, yrange.x, 0.0, 1.0);
+                    EmitVertex();
+
+                    gl_Position = vec4(xrange.y, yrange.x, 0.0, 1.0);
+                    EmitVertex();
+
+                    gl_Position = vec4(xrange.x, yrange.y, 0.0, 1.0);
+                    EmitVertex();
+
+                    gl_Position = vec4(xrange.y, yrange.y, 0.0, 1.0);
+                    EmitVertex();
+
+                    EndPrimitive();
+                }  
+
+            "#;
+
             let fragment = r#"
-                #version 140
+                #version 330 core
                 in vec4 vert_color;
                 out vec4 color;
+
                 void main() {
                     color = vert_color;
                 }
             "#;
 
-            Program::from_source(display, vertex, fragment, None).unwrap()
+            Program::from_source(display, vertex, fragment, Some(geometry)).unwrap()
         };
 
         Shaders {
