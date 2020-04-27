@@ -130,7 +130,7 @@ impl Database {
             } else {
                 buf.pop();
                 match serde_json::from_str(&buf).unwrap() {
-                    JsonTraceEvent::AsyncStart { id, ts, name, parent_id, metadata: _ } => {
+                    JsonTraceEvent::AsyncStart { id, ts, name, parent_id } => {
                         let tid = TaskId(task_ids.len() as u32);
                         assert!(task_ids.insert(id, tid).is_none());
                         let parent = task_ids[&parent_id];
@@ -162,7 +162,7 @@ impl Database {
                         max_ts = std::cmp::max(ts.as_nanos() as u64, max_ts);
                         tasks[tid.0 as usize].span.end = ts.as_nanos() as u64;
                     }
-                    JsonTraceEvent::SyncStart { id, ts, name, parent_id, metadata: _ } => {
+                    JsonTraceEvent::SyncStart { id, ts, name, parent_id } => {
                         let tid = TaskId(task_ids.len() as u32);
                         assert!(task_ids.insert(id, tid).is_none());
                         let parent = task_ids[&parent_id];

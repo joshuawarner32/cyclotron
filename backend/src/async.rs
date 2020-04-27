@@ -15,7 +15,6 @@ use futures::task::{
     Task,
 };
 use futures::executor::{Notify, NotifyHandle, spawn};
-use serde_json;
 use event::{AsyncOutcome, SpanId, TraceEvent};
 use state::TRACER_STATE;
 
@@ -48,12 +47,8 @@ impl AtomicTask {
 
 pub trait TraceFuture: Future + Sized where Self::Error : Debug {
     fn traced<S: Into<String>>(self, name: S) -> TracedFuture<Self> {
-        self.with_metadata(name, serde_json::Value::Null)
-    }
-
-    fn with_metadata<S: Into<String>>(self, name: S, meta: serde_json::Value) -> TracedFuture<Self> {
         TracedFuture {
-            state: TraceState::Created { name: name.into(), metadata: meta },
+            state: TraceState::Created { name: name.into() },
             inner: self,
         }
     }
@@ -63,7 +58,6 @@ impl<F: Future + Sized> TraceFuture for F where F::Error : Debug {}
 enum TraceState {
     Created {
         name: String,
-        metadata: serde_json::Value,
     },
     Executing {
         parent: SpanId,
@@ -107,7 +101,7 @@ impl<F: Future> Future for TracedFuture<F> where F::Error : Debug {
                 let mut st = c.borrow_mut();
                 let (parent_id, span_id) = match mem::replace(&mut self.state, TraceState::Poisoned) {
                     // First poll!  Let's set up our execution state.
-                    TraceState::Created { name, metadata } => {
+                    TraceState::Created { name } => {
                         let span_id = SpanId::new();
                         let parent_id = st.current_span.expect("Missing parent span");
 
@@ -116,7 +110,6 @@ impl<F: Future> Future for TracedFuture<F> where F::Error : Debug {
                             id: span_id,
                             parent_id: parent_id,
                             ts: st.now(),
-                            metadata: metadata,
                         };
                         st.emit(event);
 

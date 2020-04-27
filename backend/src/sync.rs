@@ -1,4 +1,3 @@
-use serde_json;
 use event::{SpanId, TraceEvent};
 use state::{TRACER_STATE, Logger};
 
@@ -50,10 +49,6 @@ pub struct SyncSpan {
 
 impl SyncSpan {
     pub fn new<S: Into<String>>(name: S) -> Self {
-        Self::with_metadata(name, serde_json::Value::Null)
-    }
-
-    pub fn with_metadata<S: Into<String>>(name: S, meta: serde_json::Value) -> Self {
         TRACER_STATE.with(|c| {
             let mut st = c.borrow_mut();
 
@@ -66,7 +61,6 @@ impl SyncSpan {
                 id: span_id,
                 parent_id: parent_id,
                 ts: st.now(),
-                metadata: meta,
             };
             st.emit(event);
 

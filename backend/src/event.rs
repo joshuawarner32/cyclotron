@@ -1,6 +1,5 @@
 use std::time::Duration;
 use rand;
-use serde_json;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
 pub struct SpanId(pub u64);
@@ -25,7 +24,6 @@ pub enum TraceEvent {
         id: SpanId,
         parent_id: SpanId,
         ts: Duration,
-        metadata: serde_json::Value,
     },
     AsyncOnCPU {
         id: SpanId,
@@ -46,7 +44,6 @@ pub enum TraceEvent {
         id: SpanId,
         parent_id: SpanId,
         ts: Duration,
-        metadata: serde_json::Value,
     },
     SyncEnd {
         id: SpanId,
